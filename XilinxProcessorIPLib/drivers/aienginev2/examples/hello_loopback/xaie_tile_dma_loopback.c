@@ -36,11 +36,13 @@
 
 /***************************** Include Files *********************************/
 #include <stdio.h>
+#include <fcntl.h>
+#include <sys/mman.h>
 #include <xaiengine.h>
 
 /************************** Constant Definitions *****************************/
 /* AIE Device parameters */
-#define XAIE_BASE_ADDR		0x20000000000
+#define XAIE_BASE_ADDR	0x0//	0x20000000000
 #define XAIE_NUM_ROWS		9
 #define XAIE_NUM_COLS		50
 #define XAIE_COL_SHIFT		23
@@ -60,6 +62,8 @@
 #define DATA_MEM_OUTPUT_ADDR	0x3000
 
 #define NUM_ELEMS 32
+
+#define BAR_PF0_DEV_FILE_AIE    "/sys/bus/pci/devices/0000:21:00.0/resource2" 
 
 /************************** Function Definitions *****************************/
 /*****************************************************************************/
@@ -82,7 +86,29 @@ int main()
 	XAie_LocType Tile_1, Tile_2;
 	XAie_DmaDesc Tile_1_MM2S, Tile_1_S2MM, Tile_2_MM2S, Tile_2_S2MM;
 
-	XAie_SetupConfig(ConfigPtr, XAIE_DEV_GEN_AIE, XAIE_BASE_ADDR,
+  char bar_dev_file_aie[100];
+  strcpy(bar_dev_file_aie, BAR_PF0_DEV_FILE_AIE);
+  printf("Opening %s to access MMIO AIE\n", bar_dev_file_aie);
+
+  // Opening BAR2
+  int fda;
+  if((fda = open(bar_dev_file_aie, O_RDWR | O_SYNC)) == -1) {
+      printf("[ERROR] Failed to open device file\n");
+      return 1;
+  }
+  printf("device file opened\n");
+
+  // Map the memory region into userspace
+  volatile void *map_aie_base = mmap(NULL,    // virtual address
+                      0x20000000,             // length
+                      PROT_READ | PROT_WRITE, // prot
+                      MAP_SHARED,             // flags
+                      fda,                    // device fd
+                      0);                     // offset
+  if (!map_aie_base) return 1;
+  printf("AIE registers mapped into userspace at %p\n",map_aie_base);
+
+	XAie_SetupConfig(ConfigPtr, XAIE_DEV_GEN_AIE, (u64)map_aie_base,
 			XAIE_COL_SHIFT, XAIE_ROW_SHIFT,
 			XAIE_NUM_COLS, XAIE_NUM_ROWS, XAIE_SHIM_ROW,
 			XAIE_RES_TILE_ROW_START, XAIE_RES_TILE_NUM_ROWS,
@@ -107,12 +133,27 @@ int main()
 		data[i] = rand() % 127;
 	}
 
-	Tile_1 = XAie_TileLoc(8, 3);
-	Tile_2 = XAie_TileLoc(8, 4);
+  data[5] = 0xfeedcafe;
+
+	Tile_1 = XAie_TileLoc(34, 3);
+	Tile_2 = XAie_TileLoc(34, 4);
 
 	/* Write data to aie tile data memory */
 	RC = XAie_DataMemBlockWrite(&DevInst, Tile_1, DATA_MEM_INPUT_ADDR,
 			(void *)data, sizeof(uint32_t) * NUM_ELEMS);
+	if(RC != XAIE_OK) {
+		printf("Writing data to aie data memory failed.\n");
+		return -1;
+	}
+
+  u32 data_o[NUM_ELEMS];
+	for(uint8_t i = 0U; i < NUM_ELEMS; i++) {
+		data_o[i] = 0xbeef0000 + i + 1;
+	}
+
+	/* Write data to aie tile data memory */
+	RC = XAie_DataMemBlockWrite(&DevInst, Tile_1, DATA_MEM_OUTPUT_ADDR,
+			(void *)data_o, sizeof(uint32_t) * NUM_ELEMS);
 	if(RC != XAIE_OK) {
 		printf("Writing data to aie data memory failed.\n");
 		return -1;

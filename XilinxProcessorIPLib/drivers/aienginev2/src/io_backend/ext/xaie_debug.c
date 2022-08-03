@@ -27,6 +27,7 @@
 #endif
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include "xaie_helper.h"
 #include "xaie_io.h"
@@ -107,6 +108,8 @@ static AieRC XAie_DebugIO_Write32(void *IOInst, u64 RegOff, u32 Value)
 {
 	XAie_DebugIO *DebugIOInst = (XAie_DebugIO *)IOInst;
 
+  volatile u32 *LocalAddr = (volatile u32 *)(DebugIOInst->BaseAddr + RegOff);
+  *LocalAddr = Value;
 	printf("W: 0x%lx, 0x%x\n", DebugIOInst->BaseAddr + RegOff, Value);
 
 	return XAIE_OK;
@@ -130,8 +133,8 @@ static AieRC XAie_DebugIO_Read32(void *IOInst, u64 RegOff, u32 *Data)
 {
 	XAie_DebugIO *DebugIOInst = (XAie_DebugIO *)IOInst;
 
-	*Data = 0U;
-	printf("R: 0x%lx, 0x%x\n", DebugIOInst->BaseAddr + RegOff, 0);
+	*Data = *(volatile u32 *)(DebugIOInst->BaseAddr + RegOff);
+	printf("R: 0x%lx, 0x%x\n", DebugIOInst->BaseAddr + RegOff, *Data);
 
 	return XAIE_OK;
 }
@@ -157,10 +160,21 @@ static AieRC XAie_DebugIO_MaskWrite32(void *IOInst, u64 RegOff, u32 Mask,
 {
 	XAie_DebugIO *DebugIOInst = (XAie_DebugIO *)IOInst;
 
-	printf("MW: 0x%lx, 0x%x, 0x%x\n", DebugIOInst->BaseAddr + RegOff, Mask,
-			Value);
+  AieRC RC;
+  u32 RegVal;
 
-	return XAIE_OK;
+  RC = XAie_DebugIO_Read32(IOInst, RegOff, &RegVal);
+  if(RC != XAIE_OK) {
+    return RC;
+  }
+
+  RegVal &= ~Mask;
+  RegVal |= Value;
+
+	printf("MW: 0x%lx, 0x%x, 0x%x\n", DebugIOInst->BaseAddr + RegOff, Mask,
+			RegVal);
+
+	return XAie_DebugIO_Write32(IOInst, RegOff, RegVal);
 }
 
 /*****************************************************************************/
@@ -184,10 +198,35 @@ static AieRC XAie_DebugIO_MaskPoll(void *IOInst, u64 RegOff, u32 Mask, u32 Value
 {
 	XAie_DebugIO *DebugIOInst = (XAie_DebugIO *)IOInst;
 
+  AieRC Ret = XAIE_ERR;
+  u32 Count, MinTimeOutUs, RegVal;
+
+  /*
+   * Any value less than 200 us becomes noticable overhead. This is based
+   * on some profiling, and it may vary between platforms.
+   */
+  MinTimeOutUs = 200;
+  Count = ((u64)TimeOutUs + MinTimeOutUs - 1) / MinTimeOutUs;
+
+  while (Count > 0U) {
+    XAie_DebugIO_Read32(IOInst, RegOff, &RegVal);
+    if((RegVal & Mask) == Value) {
+      return XAIE_OK;
+    }
+    usleep(MinTimeOutUs);
+    Count--;
+  }
+
+  /* Check for the break from timed-out loop */
+  XAie_DebugIO_Read32(IOInst, RegOff, &RegVal);
+  if((RegVal & Mask) == Value) {
+    Ret = XAIE_OK;
+  }
+
 	printf("MP: 0x%lx, 0x%x, 0x%x, 0x%d\n", DebugIOInst->BaseAddr + RegOff,
 			Mask, Value, TimeOutUs);
 
-	return XAIE_ERR;
+  return Ret;
 }
 
 /*****************************************************************************/
@@ -301,7 +340,7 @@ static AieRC _XAie_DebugIO_NpiMaskPoll(void *IOInst, u64 RegOff, u32 Mask,
 {
 	XAie_DebugIO *DebugIOInst = (XAie_DebugIO *)IOInst;
 
-	printf("MP: 0x%lx, 0x%x, 0x%x, 0x%d\n", DebugIOInst->NpiBaseAddr + RegOff,
+	printf("NPIMP: 0x%lx, 0x%x, 0x%x, 0x%d\n", DebugIOInst->NpiBaseAddr + RegOff,
 			Mask, Value, TimeOutUs);
 
 	return XAIE_OK;
