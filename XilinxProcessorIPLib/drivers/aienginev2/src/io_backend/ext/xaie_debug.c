@@ -35,6 +35,8 @@
 #include "xaie_io_privilege.h"
 #include "xaie_npi.h"
 
+#define CHATTY 0
+
 /****************************** Type Definitions *****************************/
 typedef struct {
 	u64 BaseAddr;
@@ -110,7 +112,7 @@ static AieRC XAie_DebugIO_Write32(void *IOInst, u64 RegOff, u32 Value)
 
   volatile u32 *LocalAddr = (volatile u32 *)(DebugIOInst->BaseAddr + RegOff);
   *LocalAddr = Value;
-	printf("W: 0x%lx, 0x%x\n", DebugIOInst->BaseAddr + RegOff, Value);
+	if (CHATTY) printf("W: 0x%lx, 0x%x\n", DebugIOInst->BaseAddr + RegOff, Value);
 
 	return XAIE_OK;
 }
@@ -134,7 +136,7 @@ static AieRC XAie_DebugIO_Read32(void *IOInst, u64 RegOff, u32 *Data)
 	XAie_DebugIO *DebugIOInst = (XAie_DebugIO *)IOInst;
 
 	*Data = *(volatile u32 *)(DebugIOInst->BaseAddr + RegOff);
-	printf("R: 0x%lx, 0x%x\n", DebugIOInst->BaseAddr + RegOff, *Data);
+	if (CHATTY) printf("R: 0x%lx, 0x%x\n", DebugIOInst->BaseAddr + RegOff, *Data);
 
 	return XAIE_OK;
 }
@@ -171,7 +173,7 @@ static AieRC XAie_DebugIO_MaskWrite32(void *IOInst, u64 RegOff, u32 Mask,
   RegVal &= ~Mask;
   RegVal |= Value;
 
-	printf("MW: 0x%lx, 0x%x, 0x%x\n", DebugIOInst->BaseAddr + RegOff, Mask,
+	if (CHATTY) printf("MW: 0x%lx, 0x%x, 0x%x\n", DebugIOInst->BaseAddr + RegOff, Mask,
 			RegVal);
 
 	return XAie_DebugIO_Write32(IOInst, RegOff, RegVal);
@@ -223,7 +225,7 @@ static AieRC XAie_DebugIO_MaskPoll(void *IOInst, u64 RegOff, u32 Mask, u32 Value
     Ret = XAIE_OK;
   }
 
-	printf("MP: 0x%lx, 0x%x, 0x%x, 0x%d\n", DebugIOInst->BaseAddr + RegOff,
+	if (CHATTY) printf("MP: 0x%lx, 0x%x, 0x%x, 0x%d\n", DebugIOInst->BaseAddr + RegOff,
 			Mask, Value, TimeOutUs);
 
   return Ret;
@@ -316,7 +318,7 @@ static void _XAie_DebugIO_NpiWrite32(void *IOInst, u32 RegOff,
 	u64 RegAddr;
 
 	RegAddr = DebugIOInst->NpiBaseAddr + RegOff;
-	printf("NPIMW: 0x%lx, 0x%x\n", RegAddr, RegVal);
+	if (CHATTY) printf("NPIMW: 0x%lx, 0x%x\n", RegAddr, RegVal);
 }
 
 /*****************************************************************************/
@@ -340,7 +342,7 @@ static AieRC _XAie_DebugIO_NpiMaskPoll(void *IOInst, u64 RegOff, u32 Mask,
 {
 	XAie_DebugIO *DebugIOInst = (XAie_DebugIO *)IOInst;
 
-	printf("NPIMP: 0x%lx, 0x%x, 0x%x, 0x%d\n", DebugIOInst->NpiBaseAddr + RegOff,
+	if (CHATTY) printf("NPIMP: 0x%lx, 0x%x, 0x%x, 0x%d\n", DebugIOInst->NpiBaseAddr + RegOff,
 			Mask, Value, TimeOutUs);
 
 	return XAIE_OK;
